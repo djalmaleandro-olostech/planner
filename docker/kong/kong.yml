@@ -1,0 +1,13 @@
+_format_version: "1.1"
+_transform: true
+
+services:
+  - host: localhost
+    name: feed-service
+    port: 9601
+    protocol: http
+    routes:
+      - name: User Search
+        paths:
+          - /user/search
+        strip_path: true

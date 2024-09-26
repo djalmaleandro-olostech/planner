@@ -1,0 +1,64 @@
+services:
+  redis-master:
+    image: redis:7.0.7
+    container_name: redis-master
+    ports:
+    - "6379:6379"
+
+  redis-replica:
+    image: redis:7.0.7
+    container_name: redis-replica
+    ports:
+      - "6380:6379"
+    depends_on:
+      - redis-master
+    command: redis-server --slaveof redis-master 6379
+
+  composer:
+    image: composer:latest
+    container_name: 'php-service-composer'
+    volumes:
+      - ./:/opt/www
+    working_dir: /opt/www
+    entrypoint: composer
+    command: install --dev --ignore-platform-reqs
+    restart: "no"
+
+  app:
+    container_name: 'php-service'
+    working_dir: /opt/www
+    tty: true
+    build:
+      context: ./
+      dockerfile: ./docker/php/Dockerfile
+      target: dev
+    volumes:
+      - ./:/opt/www
+    ports:
+      - "9501:9501"
+    env_file:
+      - ./.env
+    environment:
+      - REDIS_RW_HOST=redis-master
+      - REDIS_RR_HOST=redis-replica
+
+    links:
+      - redis-master
+      - redis-replica
+    depends_on:
+      - composer
+
+  console:
+    container_name: 'php-service-console'
+    working_dir: /opt/www
+    build:
+      context: ./
+      dockerfile: ./docker/php/Dockerfile
+      target: dev
+    volumes:
+      - ./:/opt/www
+
+    env_file:
+      - ./.env
+    profiles:
+      - console

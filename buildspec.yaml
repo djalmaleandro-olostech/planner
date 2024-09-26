@@ -1,0 +1,102 @@
+version: 0.2
+
+phases:
+  install:
+    runtime-versions:
+      php: 8.2
+  pre_build:
+    run-as: root
+    commands:
+      #-----------------------------------------------------------------------------------------------------------------
+      # Enable debug (x-trace)
+      #-----------------------------------------------------------------------------------------------------------------
+      - set -x
+      #-----------------------------------------------------------------------------------------------------------------
+      # Export Variables used in Docker build process
+      #-----------------------------------------------------------------------------------------------------------------
+      - export AWS_REGION="$AWS_REGION"
+      - export AWS_ACCOUNT_ID="$AWS_ACCOUNT_ID"
+      - export NEW_RELIC_APPNAME="$APP_NAME"
+      - export NEW_RELIC_LICENSE_KEY="$NEW_RELIC_LICENSE_KEY"
+
+      - export REVISION="latest"
+      - export DOCKER_BUILDKIT=1
+
+      - export APP_URL=$APP_URL
+
+      - export APP_NAME=$APP_NAME
+      - export REVISION="latest"
+      - export ENV_NAME=$ENVIRONMENT_NAME
+
+      - export CONTAINER_PHP=$APP_NAME
+      - export AWS_ECR_URI="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
+      - export REPOSITORY_URI=$REPOSITORY_URI
+
+
+      #-----------------------------------------------------------------------------------------------------------------
+      # Move .env artifact from build to the docker app ( will be copied via COPY ./ ./ )
+      #-----------------------------------------------------------------------------------------------------------------
+      - mv -f $CODEBUILD_SRC_DIR_env/tmp/.env ./.env
+      #-----------------------------------------------------------------------------------------------------------------
+      # AWS ECR
+      #-----------------------------------------------------------------------------------------------------------------
+      - aws ecr get-login-password --region "$AWS_REGION" | docker login --username AWS --password-stdin "$AWS_ECR_URI"
+
+      #-----------------------------------------------------------------------------------------------------------------
+      # debug
+      #-----------------------------------------------------------------------------------------------------------------
+#      - ls -lha /tmp/; exit 0;
+#      - ls -lha ./; exit 0;
+#      - printenv; exit 0;
+
+  build:
+    commands:
+      #-----------------------------------------------------------------------------------------------------------------
+      # PHP composer install
+      #-----------------------------------------------------------------------------------------------------------------
+      - |
+        composer install \
+           --no-plugins \
+           --ignore-platform-reqs \
+           --no-dev \
+           --no-scripts \
+           --optimize-autoloader \
+           --apcu-autoloader  \
+           --no-progress;
+
+      #-----------------------------------------------------------------------------------------------------------------
+      # Build PHP-FPM Docker image
+      #-----------------------------------------------------------------------------------------------------------------
+      - |
+        docker build \
+          --target=prod \
+          --build-arg ENV_NAME="$ENV_NAME" \
+          --build-arg NEW_RELIC_LICENSE_KEY="$NEW_RELIC_LICENSE_KEY" \
+          --build-arg NEW_RELIC_APPNAME="$NEW_RELIC_APPNAME" \
+          -t "$CONTAINER_PHP" \
+          -f docker/php/Dockerfile .
+
+  post_build:
+    commands:
+      #-----------------------------------------------------------------------------------------------------------------
+      # Tag Docker images
+      #-----------------------------------------------------------------------------------------------------------------
+      - docker tag $CONTAINER_PHP:$REVISION $REPOSITORY_URI:$REVISION
+      #-----------------------------------------------------------------------------------------------------------------
+      # Push Docker images
+      #-----------------------------------------------------------------------------------------------------------------
+      - docker push $REPOSITORY_URI:$REVISION
+      #-----------------------------------------------------------------------------------------------------------------
+      # Write webserver json for images definitions
+      #-----------------------------------------------------------------------------------------------------------------
+      - printf '[' > imagedefinitions.json
+      - printf '{"name":"%s","imageUri":"%s"}'  $CONTAINER_PHP $REPOSITORY_URI:$REVISION >> imagedefinitions.json
+      - printf ']' >> imagedefinitions.json
+      #-----------------------------------------------------------------------------------------------------------------
+      # debug
+      #-----------------------------------------------------------------------------------------------------------------
+      - cat imagedefinitions.json; exit 0;
+artifacts:
+  files:
+    - imagedefinitions.json
+    - '**/*'

@@ -1,0 +1,32 @@
+receivers:
+  jaeger:
+    protocols:
+      thrift_binary:
+  statsd:
+
+processors:
+  metricstransform:
+    transforms:
+      - include: .*
+        match_type: regexp
+        action: update
+        operations:
+          - action: add_label
+            new_label: service.name
+            new_value: ${APP_NAME}
+
+exporters:
+  newrelic:
+    apikey: ${NEW_RELIC_LICENSE_KEY}
+  prometheus:
+    endpoint: "0.0.0.0:9502"
+
+service:
+  pipelines:
+    traces:
+      receivers: [ jaeger ]
+      exporters: [ newrelic ]
+    metrics:
+      receivers: [ statsd ]
+      processors: [ metricstransform ]
+      exporters: [ newrelic, prometheus ]
